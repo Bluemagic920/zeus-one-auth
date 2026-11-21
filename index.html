@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Zeus One Authenticator</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zeus Auth">
+<meta name="theme-color" content="#070708">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/emblem-64.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root {
+  --bg: #070708; --panel: #121214; --field: #1c1c20; --border: #3a3122; --fg: #f3efe6;
+  --muted: #a39b89; --gold: #e0ad3c; --gold2: #f6c85c; --golddim: #4d3a12; --danger: #e5534b;
+  --safe-t: env(safe-area-inset-top); --safe-b: env(safe-area-inset-bottom);
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --classic: "Iowan Old Style", Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 16px/1.4 var(--ui); }
+body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+input, textarea, select { -webkit-user-select: text; user-select: text; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.hidden { display: none !important; }
+
+.screen { position: fixed; inset: 0; overflow-y: auto; padding: calc(var(--safe-t) + 18px) 20px calc(var(--safe-b) + 24px); }
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; text-align: center; }
+.logo { width: min(78vw, 340px); height: auto; display: block; }
+.logo.small { width: 180px; }
+.title { font-family: var(--classic); color: var(--gold); letter-spacing: .32em; font-size: 15px; font-weight: 700; margin: 6px 0 18px; }
+.muted { color: var(--muted); font-size: 14px; }
+.card-form { width: 100%; max-width: 400px; text-align: left; }
+label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 14px 0 5px; text-transform: uppercase; }
+input[type=password], input[type=text], textarea, select {
+  width: 100%; background: var(--field); color: var(--fg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 13px 14px; font: 17px var(--ui); outline: none; }
+input:focus, textarea:focus, select:focus { border-color: var(--gold); }
+textarea { min-height: 90px; resize: vertical; font-family: var(--mono); font-size: 14px; }
+.btn { display: block; width: 100%; border: 0; border-radius: 14px; padding: 15px; font-weight: 700; font-size: 17px;
+  background: var(--field); border: 1px solid var(--border); margin-top: 12px; }
+.btn.gold { background: linear-gradient(180deg, var(--gold2), var(--gold)); color: #1a1204; border-color: var(--gold); }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .45; }
+.btn:active { transform: scale(.985); }
+.link { background: none; border: 0; color: var(--gold); text-decoration: underline; padding: 12px; font-size: 15px; }
+.err { color: var(--danger); min-height: 20px; font-size: 14px; margin-top: 8px; }
+.key { font: 700 17px/1.6 var(--mono); color: var(--gold2); background: var(--field); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px; text-align: center; word-break: break-all; -webkit-user-select: all; user-select: all; }
+.check { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg); }
+.check input { width: 22px; height: 22px; accent-color: var(--gold); }
+.steps { text-align: left; max-width: 400px; }
+.steps li { margin: 10px 0; }
+.shareglyph { display: inline-block; border: 2px solid var(--gold); border-radius: 4px; width: 18px; height: 18px; position: relative; vertical-align: -3px; }
+.shareglyph::after { content: "\2191"; position: absolute; left: 2px; top: -9px; color: var(--gold); font-weight: 700; }
+
+/* main */
+#screen-main { padding-left: 14px; padding-right: 14px; padding-bottom: calc(var(--safe-b) + 100px); }
+.topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.topbar img { width: 34px; height: 34px; }
+.topbar h1 { font: 700 17px var(--classic); color: var(--gold); letter-spacing: .14em; margin: 0; flex: 1; }
+.iconbtn { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); font-size: 19px; }
+.banner { background: linear-gradient(90deg, #2c2108, #1a1406); border: 1px solid var(--gold); border-radius: 14px; padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 14px; }
+.banner b { color: var(--gold2); }
+.banner button { margin-left: auto; background: var(--gold); color: #1a1204; border: 0; border-radius: 10px; padding: 9px 12px; font-weight: 700; white-space: nowrap; }
+#search { margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid #24211b; border-radius: 16px; padding: 14px 14px 14px 16px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; }
+.card:active { background: #18181b; }
+.card .info { flex: 1; min-width: 0; }
+.card .issuer { color: var(--gold); font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .label { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .code { font: 700 32px/1.15 var(--mono); letter-spacing: .04em; margin-top: 2px; }
+.card .code.soon { color: var(--danger); }
+.card .more { width: 36px; height: 36px; border-radius: 10px; border: 0; background: transparent; color: var(--muted); font-size: 22px; }
+.ring { width: 34px; height: 34px; flex: none; }
+.ring circle { fill: none; stroke-width: 4; }
+.ring .bg { stroke: #2a2620; }
+.ring .fg { stroke: var(--gold); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .9s linear; }
+.card.zap::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 70% 0%, rgba(255,214,120,.55), transparent 60%); animation: zapfade 1.4s ease-out forwards; pointer-events: none; }
+@keyframes zapfade { from { opacity: 1; } to { opacity: 0; } }
+.empty { text-align: center; color: var(--muted); padding: 50px 20px; }
+.empty .big { font-size: 46px; }
+.fab { position: fixed; right: 20px; bottom: calc(var(--safe-b) + 22px); width: 64px; height: 64px; border-radius: 32px; border: 0;
+  background: linear-gradient(180deg, var(--gold2), var(--gold)); color: #1a1204; font-size: 34px; font-weight: 700;
+  box-shadow: 0 6px 24px rgba(224,173,60,.35); }
+
+/* sheets */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 20px 20px 0 0; padding: 18px 18px calc(var(--safe-b) + 18px); animation: up .22s ease-out; }
+@keyframes up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+.sheet h2 { font: 700 19px var(--classic); color: var(--gold); margin: 2px 0 6px; }
+.sheet .close { float: right; border: 0; background: var(--field); border-radius: 15px; width: 30px; height: 30px; color: var(--muted); }
+.choice { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: var(--field); border: 1px solid var(--border);
+  border-radius: 14px; padding: 15px; margin-top: 10px; }
+.choice .ico { font-size: 24px; width: 32px; text-align: center; }
+.choice b { display: block; }
+.choice span { color: var(--muted); font-size: 13px; }
+details { margin-top: 10px; }
+summary { color: var(--gold); padding: 6px 0; }
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; }
+.acct { background: var(--field); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+.acct b { color: var(--gold); }
+
+/* scanner */
+#scanner { position: fixed; inset: 0; background: #000; z-index: 30; }
+#scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#scanner .frame { position: absolute; left: 50%; top: 45%; width: min(72vw, 320px); aspect-ratio: 1; transform: translate(-50%, -50%);
+  border: 3px solid var(--gold); border-radius: 22px; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); }
+#scanner .hint { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-b) + 110px); text-align: center; padding: 0 30px; text-shadow: 0 1px 4px #000; }
+#scanner .cancel { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 34px); width: 70%; max-width: 320px; }
+
+/* toast + bolt */
+#toast { position: fixed; left: 50%; bottom: calc(var(--safe-b) + 100px); transform: translateX(-50%); background: #26221a; border: 1px solid var(--gold);
+  color: var(--fg); padding: 11px 18px; border-radius: 22px; font-size: 15px; z-index: 50; opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; }
+#toast.show { opacity: 1; }
+#bolt { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: none; }
+#bolt.go { display: block; animation: flash .7s ease-out forwards; }
+#bolt svg { position: absolute; left: 50%; top: 0; height: 62%; transform: translateX(-46%); filter: drop-shadow(0 0 18px #ffcf6a) drop-shadow(0 0 40px #e0ad3c); }
+@keyframes flash { 0% { background: rgba(255,240,200,.85); opacity: 1; } 25% { background: rgba(255,214,120,.25); } 100% { background: transparent; opacity: 0; } }
+.busy { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<!-- install hint (iPhone Safari, not yet on Home Screen) -->
+<section id="screen-install" class="screen hidden"><div class="center">
+  <img class="logo" src="img/zeusone-logo.png" alt="Zeus One">
+  <div class="title">AUTHENTICATOR</div>
+  <p>Add Zeus One Authenticator to your Home Screen first, so your codes are kept safely and it works offline:</p>
+  <ol class="steps">
+    <li>Tap the <b>Share</b> button <span class="shareglyph"></span> in Safari.</li>
+    <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+    <li>Open <b>Zeus Auth</b> from your Home Screen.</li>
+  </ol>
+  <button class="link" id="btn-skip-install">Continue in Safari anyway</button>
+</div></section>
+
+<!-- welcome -->
+<section id="screen-welcome" class="screen hidden"><div class="center">
+  <img class="logo" src="img/zeusone-logo.png" alt="Zeus One">
+  <div class="title">AUTHENTICATOR</div>
+  <div class="card-form">
+    <button class="btn gold" id="btn-start-new">Set up a new authenticator</button>
+    <button class="btn" id="btn-start-restore">Restore from a backup file</button>
+    <p class="muted" style="text-align:center;margin-top:18px">Your codes are encrypted on this phone and never sent anywhere.</p>
+  </div>
+</div></section>
+
+<!-- create password -->
+<section id="screen-create" class="screen hidden"><div class="center">
+  <img class="logo small" src="img/zeusone-logo.png" alt="Zeus One">
+  <div class="title">CHOOSE AN APP PASSWORD</div>
+  <form class="card-form" id="form-create" autocomplete="off">
+    <p class="muted" id="create-note">This password unlocks the app. Use at least 6 characters.</p>
+    <label for="create-pw">App password</label>
+    <input type="password" id="create-pw" autocomplete="new-password">
+    <label for="create-pw2">Confirm password</label>
+    <input type="password" id="create-pw2" autocomplete="new-password">
+    <div class="err" id="create-err"></div>
+    <button class="btn gold" type="submit">Continue</button>
+    <button class="btn" type="button" id="btn-create-back">Back</button>
+  </form>
+</div></section>
+
+<!-- recovery key -->
+<section id="screen-recovery" class="screen hidden"><div class="center">
+  <div class="title" style="font-size:18px">⚡ YOUR RECOVERY KEY</div>
+  <div class="card-form">
+    <p class="muted">If you forget your app password, this key is the only way back in. Save it somewhere safe and offline (print it, write it down, or keep it in Zeus One Vault).</p>
+    <div class="key" id="recovery-key"></div>
+    <div class="row">
+      <button class="btn" id="btn-rk-copy">Copy</button>
+      <button class="btn" id="btn-rk-save">Save as file</button>
+    </div>
+    <label class="check"><input type="checkbox" id="rk-ok"> I've saved my Recovery Key</label>
+    <button class="btn gold" id="btn-rk-done" disabled>Continue</button>
+  </div>
+</div></section>
+
+<!-- lock -->
+<section id="screen-lock" class="screen hidden"><div class="center">
+  <img class="logo" src="img/zeusone-logo.png" alt="Zeus One">
+  <div class="title">AUTHENTICATOR</div>
+  <form class="card-form" id="form-unlock" autocomplete="off">
+    <label for="unlock-pw">App password</label>
+    <input type="password" id="unlock-pw" autocomplete="current-password" enterkeyhint="go">
+    <div class="err" id="unlock-err"></div>
+    <button class="btn gold" type="submit" id="btn-unlock">Unlock</button>
+  </form>
+  <button class="link" id="btn-forgot">Forgot password? Use your Recovery Key</button>
+</div></section>
+
+<!-- forgot -->
+<section id="screen-forgot" class="screen hidden"><div class="center">
+  <div class="title" style="font-size:18px">RECOVER ACCESS</div>
+  <form class="card-form" id="form-forgot" autocomplete="off">
+    <label for="forgot-rk">Recovery Key</label>
+    <textarea id="forgot-rk" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-..."></textarea>
+    <label for="forgot-pw">New app password</label>
+    <input type="password" id="forgot-pw" autocomplete="new-password">
+    <label for="forgot-pw2">Confirm new password</label>
+    <input type="password" id="forgot-pw2" autocomplete="new-password">
+    <div class="err" id="forgot-err"></div>
+    <button class="btn gold" type="submit">Recover</button>
+    <button class="btn" type="button" id="btn-forgot-back">Back</button>
+  </form>
+</div></section>
+
+<!-- main -->
+<section id="screen-main" class="screen hidden">
+  <div class="topbar">
+    <img src="icons/emblem-64.png" alt="">
+    <h1>ZEUS ONE AUTH</h1>
+    <button class="iconbtn" id="btn-lock" aria-label="Lock">🔒</button>
+    <button class="iconbtn" id="btn-settings" aria-label="Settings">⚙︎</button>
+  </div>
+  <div class="banner hidden" id="banner-backup">
+    <div>⚡ <b>Back up your codes.</b><br><span class="muted" id="banner-text">You have accounts that aren't in a backup yet.</span></div>
+    <button id="btn-banner-backup">Back up</button>
+  </div>
+  <input type="text" id="search" class="hidden" placeholder="Search" autocomplete="off" autocorrect="off" spellcheck="false">
+  <div id="list"></div>
+  <div class="empty hidden" id="empty">
+    <div class="big">⚡</div>
+    <p><b>No accounts yet.</b></p>
+    <p>Tap <b>+</b> to scan a site's 2-factor QR code, receive accounts from Zeus One Authenticator on your PC, or restore a backup.</p>
+  </div>
+  <button class="fab" id="btn-add" aria-label="Add account">+</button>
+</section>
+
+<!-- scanner -->
+<div id="scanner" class="hidden">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="frame"></div>
+  <div class="hint" id="scan-hint">Point the camera at the QR code</div>
+  <button class="btn cancel" id="btn-scan-cancel">Cancel</button>
+</div>
+
+<input type="file" id="file-input" class="hidden" accept=".zoauth,application/json,text/plain,application/octet-stream">
+<div id="toast"></div>
+<div id="bolt"><svg viewBox="0 0 60 100"><polygon points="37,0 6,56 26,56 18,100 54,38 33,38 47,0" fill="#fff3cf" stroke="#ffd56a" stroke-width="2"/></svg></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
