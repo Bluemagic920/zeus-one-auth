@@ -192,6 +192,11 @@ summary { color: var(--gold); padding: 6px 0; }
 <section id="screen-lock" class="screen hidden"><div class="center">
   <img class="logo" src="img/zeusone-logo.png" alt="Zeus One">
   <div class="title">AUTHENTICATOR</div>
+  <div class="card-form hidden" id="faceid-box">
+    <button class="btn gold" id="btn-faceid" type="button">🙂 Unlock with Face ID</button>
+    <div class="err" id="faceid-err"></div>
+    <p class="muted" style="text-align:center;margin:6px 0 0">or use your app password</p>
+  </div>
   <form class="card-form" id="form-unlock" autocomplete="off">
     <label for="unlock-pw">App password</label>
     <input type="password" id="unlock-pw" autocomplete="current-password" enterkeyhint="go">

@@ -1,5 +1,5 @@
 // Zeus One Authenticator - offline support. Bump VERSION when you upload new files.
-const VERSION = "zoauth-1.0.0";
+const VERSION = "zoauth-1.1.0";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "js/app.js", "js/core.js", "js/qr.js",
   "img/zeusone-logo.png", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png",

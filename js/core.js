@@ -282,3 +282,17 @@ export async function loadData(store, dataKey) {
   const plain = await open(dataKey, unb64(store.data.iv), unb64(store.data.ct), AAD_DATA);
   return JSON.parse(dec.decode(plain)).accounts.map(cleanAccount);
 }
+
+// ------------------------------------------------ Face ID (passkey + PRF)
+// A passkey's PRF output (32 bytes, only released after Face ID) is turned into
+// a key that seals another copy of the data key. Password + Recovery Key keep working.
+const AAD_BIO = "zeusone-auth/store/faceid";
+export async function wrapBio(store, dataKey, prfOutput, credId, salt) {
+  const k = await hkdf(new Uint8Array(prfOutput), salt, "zeusone-auth/faceid");
+  const { iv, ct } = await seal(k, dataKey, AAD_BIO);
+  store.bio = { cred: b64(credId), salt: b64(salt), iv: b64(iv), ct: b64(ct) };
+}
+export async function unlockWithBio(store, prfOutput) {
+  const k = await hkdf(new Uint8Array(prfOutput), unb64(store.bio.salt), "zeusone-auth/faceid");
+  return open(k, unb64(store.bio.iv), unb64(store.bio.ct), AAD_BIO);
+}

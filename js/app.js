@@ -2,7 +2,7 @@
 import * as C from "./core.js";
 import { decodeQR } from "./qr.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const LS_STORE = "zoauth.store.v1";
 const LS_META = "zoauth.meta.v1";
 
@@ -125,7 +125,7 @@ function start() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   navigator.storage?.persist?.().catch(() => {});
   S.store = loadStore();
-  if (S.store) { show("#screen-lock"); return; }
+  if (S.store) { showLock(); return; }
   if (isIOS() && !isStandalone() && !S.meta.skipInstall) { show("#screen-install"); return; }
   show("#screen-welcome");
 }
@@ -171,7 +171,7 @@ $("#form-create").onsubmit = async (e) => {
     writeStore();
     if (S.accounts.length) { S.meta.backedUpAt = Date.now(); S.meta.changedAt = Date.now() - 1; saveMeta(); }
     $("#create-pw").value = $("#create-pw2").value = "";
-    showRecoveryKey(recoveryKey, () => { bolt(); enterMain(); });
+    showRecoveryKey(recoveryKey, async () => { bolt(); enterMain(); offerFaceId(); });
   });
 };
 
@@ -219,7 +219,7 @@ $("#form-unlock").onsubmit = async (e) => {
   });
 };
 $("#btn-forgot").onclick = () => show("#screen-forgot");
-$("#btn-forgot-back").onclick = () => show("#screen-lock");
+$("#btn-forgot-back").onclick = () => showLock();
 $("#form-forgot").onsubmit = async (e) => {
   e.preventDefault();
   const pw = $("#forgot-pw").value, err = $("#forgot-err");
@@ -243,6 +243,116 @@ $("#form-forgot").onsubmit = async (e) => {
   });
 };
 
+function showLock() {
+  $("#faceid-box").classList.toggle("hidden", !S.store?.bio);
+  $("#btn-unlock").classList.toggle("gold", !S.store?.bio);
+  $("#faceid-err").textContent = "";
+  show("#screen-lock");
+}
+
+// ---------------------------------------------------------------- Face ID
+const b64u = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromB64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+async function faceIdAvailable() {
+  try {
+    return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch { return false; }
+}
+
+async function passkeyPrf(credId, salt) {
+  const cred = await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rpId: location.hostname,
+    allowCredentials: [{ type: "public-key", id: credId }],
+    userVerification: "required",
+    timeout: 60000,
+    extensions: { prf: { eval: { first: salt } } },
+  } });
+  const out = cred?.getClientExtensionResults?.().prf?.results?.first;
+  if (!out) throw new Error("NOPRF");
+  return new Uint8Array(out);
+}
+
+async function enableFaceId() {
+  if (!(await faceIdAvailable())) {
+    toast("Face ID isn't available - check Settings > Face ID & Passcode");
+    return false;
+  }
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { id: location.hostname, name: "Zeus One Authenticator" },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "Zeus One Authenticator", displayName: "Zeus One Auth - Face ID unlock" },
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", residentKey: "required", userVerification: "required" },
+      timeout: 60000,
+      extensions: { prf: { eval: { first: salt } } },
+    } });
+    const ext = cred.getClientExtensionResults?.().prf;
+    if (ext && ext.enabled === false) throw new Error("NOPRF");
+    let out = ext?.results?.first ? new Uint8Array(ext.results.first) : null;
+    if (!out) {
+      // iPhone only gives the key on an unlock - which needs its own tap.
+      out = await new Promise((resolve, reject) => {
+        const sh = sheet(`<h2>One more Face ID</h2><p class="muted">Confirm once more so Zeus Auth can link Face ID to your encrypted codes.</p>
+          <button class="btn gold go">🙂 Confirm with Face ID</button>`);
+        sh.q(".close").onclick = () => { sh.close(); reject(Object.assign(new Error("cancelled"), { name: "NotAllowedError" })); };
+        sh.q(".go").onclick = async () => {
+          try { const r = await passkeyPrf(new Uint8Array(cred.rawId), salt); sh.close(); resolve(r); }
+          catch (err) { sh.close(); reject(err); }
+        };
+      });
+    }
+    await C.wrapBio(S.store, S.dataKey, out, new Uint8Array(cred.rawId), salt);
+    // make sure it really opens before saving
+    const check = await C.unlockWithBio(S.store, out);
+    if (b64u(check) !== b64u(S.dataKey)) throw new Error("Face ID check failed.");
+    writeStore();
+    toast("🙂 Face ID unlock is on");
+    return true;
+  } catch (e) {
+    delete S.store.bio;
+    if (e.message === "NOPRF") {
+      alert("This iPhone can't use Face ID to unlock web apps yet. It needs iOS 18.4 or later (Settings > General > Software Update). Your password still works.");
+    } else if (e.name === "NotAllowedError") {
+      toast("Face ID setup was cancelled");
+    } else {
+      toast("Couldn't set up Face ID: " + (e.message || e.name));
+    }
+    return false;
+  }
+}
+
+async function offerFaceId() {
+  if (S.store.bio || !(await faceIdAvailable())) return;
+  const sh = sheet(`<h2>Unlock with Face ID?</h2>
+    <p class="muted">Open Zeus Auth with a glance instead of typing your password. Your password and Recovery Key keep working too.</p>
+    <button class="btn gold on">🙂 Turn on Face ID</button><button class="btn later">Not now</button>`);
+  sh.q(".later").onclick = sh.close;
+  sh.q(".on").onclick = async () => { sh.close(); await enableFaceId(); };
+}
+
+$("#btn-faceid").onclick = async () => {
+  if (!S.store?.bio) return;
+  $("#faceid-err").textContent = "";
+  try {
+    const out = await passkeyPrf(fromB64(S.store.bio.cred), fromB64(S.store.bio.salt));
+    await busy($("#faceid-box"), async () => {
+      S.dataKey = await C.unlockWithBio(S.store, out);
+      S.accounts = await C.loadData(S.store, S.dataKey);
+    });
+    bolt();
+    enterMain();
+  } catch (e) {
+    S.dataKey = null;
+    $("#faceid-err").textContent = e.name === "NotAllowedError" ? "Face ID was cancelled - try again or use your password."
+      : e.name === "WrongSecret" ? "Face ID unlock no longer matches - use your password, then turn Face ID off and on in Settings."
+      : "Face ID didn't work - use your password.";
+  }
+};
+
 function lock() {
   S.dataKey = null;
   S.accounts = [];
@@ -251,7 +361,7 @@ function lock() {
   $("#list").innerHTML = "";
   closeSheets();
   stopScanner();
-  show("#screen-lock");
+  showLock();
 }
 $("#btn-lock").onclick = lock;
 document.addEventListener("visibilitychange", () => {
@@ -558,6 +668,7 @@ $("#btn-settings").onclick = () => {
     <button class="choice" data-k="backup"><span class="ico">⚡</span><div><b>Back up now</b><span>${S.meta.backedUpAt ? "Last backup " + new Date(S.meta.backedUpAt).toLocaleDateString() : "Never backed up"}</span></div></button>
     <button class="choice" data-k="import"><span class="ico">🗂</span><div><b>Import a backup file</b><span>Adds accounts; keeps the ones you have</span></div></button>
     <button class="choice" data-k="pw"><span class="ico">🔑</span><div><b>Change app password</b><span>Your Recovery Key keeps working</span></div></button>
+    <button class="choice" data-k="faceid"><span class="ico">🙂</span><div><b>Face ID unlock: ${S.store.bio ? "On" : "Off"}</b><span>${S.store.bio ? "Tap to turn off" : "Unlock with your face instead of typing"}</span></div></button>
     <button class="choice" data-k="rk"><span class="ico">🛟</span><div><b>Create a new Recovery Key</b><span>The old one stops working</span></div></button>
     <label>Lock when I leave the app for</label>
     <select class="lockm">${[[0, "Immediately"], [1, "1 minute"], [5, "5 minutes"], [15, "15 minutes"]].map(([v, t]) => `<option value="${v}" ${S.meta.lockMinutes === v ? "selected" : ""}>${t}</option>`).join("")}</select>
@@ -572,6 +683,16 @@ $("#btn-settings").onclick = () => {
     if (k === "import") importBackup();
     if (k === "pw") changePassword();
     if (k === "rk") newRecoveryKey();
+    if (k === "faceid") {
+      if (S.store.bio) {
+        if (!confirm("Turn off Face ID unlock? You'll use your app password instead.\n\nTip: you can also delete the 'Zeus One Authenticator' passkey in the Passwords app.")) return;
+        delete S.store.bio;
+        writeStore();
+        toast("Face ID unlock is off");
+      } else {
+        await enableFaceId();
+      }
+    }
     if (k === "erase") eraseAll();
   });
 };
